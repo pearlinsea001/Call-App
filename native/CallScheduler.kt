@@ -49,7 +49,12 @@ object CallScheduler {
             c, 2, Intent(c, MainActivity::class.java), PendingIntent.FLAG_IMMUTABLE
         )
         val am = c.getSystemService(AlarmManager::class.java)
-        am.setAlarmClock(AlarmManager.AlarmClockInfo(at, show), alarmIntent(c))
+val pi = alarmIntent(c)
+try {
+    am.setAlarmClock(AlarmManager.AlarmClockInfo(at, show), pi)
+} catch (e: SecurityException) {
+    am.setAndAllowWhileIdle(AlarmManager.RTC_WAKEUP, at, pi)
+}
         prefs(c).edit().putLong("endAt", at).apply()
         buzz(c)
         return at
