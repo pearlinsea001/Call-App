@@ -27,7 +27,20 @@ object CallScheduler {
             .putBoolean("ring", m["ring"] as? Boolean ?: true)
             .putBoolean("vibrate", m["vibrate"] as? Boolean ?: true)
             .putBoolean("volumeTrigger", m["volumeTrigger"] as? Boolean ?: true)
+            .putBoolean("screenOff", m["screenOff"] as? Boolean ?: false)
             .apply()
+    }
+
+    fun updateScreenOff(c: Context) {
+        try {
+            val i = Intent(c, ScreenOffService::class.java)
+            if (prefs(c).getBoolean("screenOff", false)) {
+                if (Build.VERSION.SDK_INT >= 26) c.startForegroundService(i) else c.startService(i)
+            } else {
+                c.stopService(i)
+            }
+        } catch (_: Exception) {
+        }
     }
 
     fun activeEndAt(c: Context): Long {
@@ -49,12 +62,12 @@ object CallScheduler {
             c, 2, Intent(c, MainActivity::class.java), PendingIntent.FLAG_IMMUTABLE
         )
         val am = c.getSystemService(AlarmManager::class.java)
-val pi = alarmIntent(c)
-try {
-    am.setAlarmClock(AlarmManager.AlarmClockInfo(at, show), pi)
-} catch (e: SecurityException) {
-    am.setAndAllowWhileIdle(AlarmManager.RTC_WAKEUP, at, pi)
-}
+        val pi = alarmIntent(c)
+        try {
+            am.setAlarmClock(AlarmManager.AlarmClockInfo(at, show), pi)
+        } catch (e: SecurityException) {
+            am.setAndAllowWhileIdle(AlarmManager.RTC_WAKEUP, at, pi)
+        }
         prefs(c).edit().putLong("endAt", at).apply()
         buzz(c)
         return at
