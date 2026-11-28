@@ -20,7 +20,7 @@ class Settings extends ChangeNotifier {
   String? selected; // null = random
   int delay = 10;
   int accent = 0xFF2E7D32;
-  bool dark = true, ring = true, vibrate = true, volumeTrigger = true;
+  bool dark = true, ring = true, vibrate = true, volumeTrigger = true, screenOff = false;
   late SharedPreferences p;
 
   Future<void> load() async {
@@ -33,6 +33,7 @@ class Settings extends ChangeNotifier {
     ring = p.getBool('ring') ?? ring;
     vibrate = p.getBool('vibrate') ?? vibrate;
     volumeTrigger = p.getBool('volumeTrigger') ?? volumeTrigger;
+    screenOff = p.getBool('screenOff') ?? screenOff;
   }
 
   Future<void> sync() async {
@@ -44,6 +45,7 @@ class Settings extends ChangeNotifier {
         'ring': ring,
         'vibrate': vibrate,
         'volumeTrigger': volumeTrigger,
+        'screenOff': screenOff,
       });
     } catch (_) {}
   }
@@ -57,6 +59,7 @@ class Settings extends ChangeNotifier {
     p.setBool('ring', ring);
     p.setBool('vibrate', vibrate);
     p.setBool('volumeTrigger', volumeTrigger);
+    p.setBool('screenOff', screenOff);
     sync();
     notifyListeners();
   }
@@ -223,11 +226,25 @@ class CallPage extends StatefulWidget {
 }
 
 class _CallPageState extends State<CallPage> {
-  bool answered = false, muted = false, speaker = false;
+  bool answered = false, muted = false, weMuted = false, speaker = false;
   int secs = 0;
   Timer? clock;
 
+  @override
+  void initState() {
+    super.initState();
+    native.invokeMethod<bool>('getMute').then((v) {
+      if (mounted) setState(() => muted = v ?? false);
+    }).catchError((_) {});
+  }
+
   void stopAlert() => native.invokeMethod('stopAlert');
+
+  void toggleMute() {
+    setState(() => muted = !muted);
+    weMuted = muted;
+    native.invokeMethod('setMute', muted);
+  }
 
   void accept() {
     stopAlert();
@@ -236,7 +253,6 @@ class _CallPageState extends State<CallPage> {
   }
 
   void end() {
-    stopAlert();
     clock?.cancel();
     Navigator.of(context).pop();
   }
@@ -244,8 +260,13 @@ class _CallPageState extends State<CallPage> {
   @override
   void dispose() {
     callOpen = false;
-    stopAlert();
     clock?.cancel();
+    native.invokeMethod('stopAlert');
+    if (weMuted) {
+      native.invokeMethod('setMute', false);
+      weMuted = false;
+    }
+    native.invokeMethod('callEnded');
     super.dispose();
   }
 
@@ -281,9 +302,15 @@ class _CallPageState extends State<CallPage> {
               child: answered
                   ? Column(children: [
                       Row(mainAxisAlignment: MainAxisAlignment.spaceEvenly, children: [
-                        circle(muted ? Icons.mic_off : Icons.mic, Colors.white24, () => setState(() => muted = !muted)),
+                        Column(children: [
+                          circle(muted ? Icons.volume_off : Icons.volume_up,
+                              muted ? Color(widget.s.accent) : Colors.white24, toggleMute),
+                          const SizedBox(height: 6),
+                          Text(muted ? 'Unmute' : 'Mute',
+                              style: const TextStyle(color: Colors.white70, fontSize: 12)),
+                        ]),
                         circle(Icons.dialpad, Colors.white24, () {}),
-                        circle(speaker ? Icons.volume_up : Icons.volume_down, Colors.white24,
+                        circle(Icons.speaker_phone, speaker ? Color(widget.s.accent) : Colors.white24,
                             () => setState(() => speaker = !speaker)),
                       ]),
                       const SizedBox(height: 40),
@@ -389,11 +416,23 @@ class _SettingsPageState extends State<SettingsPage> {
             value: s.volumeTrigger,
             onChanged: (v) { s.volumeTrigger = v; s.save(); setState(() {}); },
           ),
+          SwitchListTile(
+            title: const Text('Screen-off volume trigger'),
+            subtitle: const Text('Keeps a silent audio session and a small notification running so the trigger also works with the screen off. Uses some battery.'),
+            value: s.screenOff,
+            onChanged: (v) { s.screenOff = v; s.save(); setState(() {}); },
+          ),
           ListTile(
             title: const Text('Open Accessibility settings'),
             subtitle: const Text('Turn on "Fake Call volume trigger"'),
             trailing: const Icon(Icons.chevron_right),
             onTap: () => native.invokeMethod('openA11y'),
+          ),
+          ListTile(
+            title: const Text('Allow display over other apps'),
+            subtitle: const Text('Lets the call open as a full screen when the phone is locked or the screen is off'),
+            trailing: const Icon(Icons.chevron_right),
+            onTap: () => native.invokeMethod('openOverlay'),
           ),
           ListTile(
             title: const Text('Allow restricted settings'),
